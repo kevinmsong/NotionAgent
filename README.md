@@ -15,11 +15,3 @@ This Streamlit app enables you to interactively query the content of any Notion 
 
 - **Interactive User Interface:**  
   Built with Streamlit, the app provides a user-friendly interface where you can input a Notion URL, preview indexed content, and ask questions about the page.
-
-## Installation
-
-1. **Clone the Repository:**
-
-   ```bash
-   git clone https://github.com/yourusername/notion-page-qa.git
-   cd notion-page-qa
