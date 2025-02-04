@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Use st.secrets or environment variables in production.
 NOTION_API_KEY = st.secrets.get("NOTION_API_KEY", "your-notion-api-key")
 # Use your Gemini API key from secrets; a default is provided if not set.
-GEMINI_API_KEY = st.secrets.get("gemini_api_key", "AIzaSyBafl-5GBLPsxHpsofFaDE03aMVCqh-wTU")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 # Initialize the Notion client and configure Gemini.
 notion = Client(auth=NOTION_API_KEY)
