@@ -32,7 +32,7 @@ def extract_page_id(url: str) -> str:
     """
     patterns = [
         r'notion\.so/[^/]+/[^-]+-([a-f0-9]{32})',  # Workspace/page-name format
-        r'([a-f0-9]{32})',                          # Direct ID
+        r'([a-f0-9]{32})',                        # Direct ID
     ]
     for pattern in patterns:
         match = re.search(pattern, url)
@@ -87,6 +87,7 @@ def process_block(block: Dict) -> str:
     text = get_block_text(block)
     if not text.strip():
         return ""
+
     if block_type == "heading_1":
         return f"\n# {text}\n"
     elif block_type == "heading_2":
@@ -169,10 +170,12 @@ def fetch_block_children(
     if block_id in visited:
         return []
     visited.add(block_id)
+
     content = []
     try:
         cursor = None
         current_group = []
+
         while True:
             response = notion.blocks.children.list(
                 block_id=block_id,
@@ -180,38 +183,43 @@ def fetch_block_children(
                 page_size=100
             )
             blocks = response.get("results", [])
-            for block in blocks:
-                block_type = block.get("type", "")
-                # Handle child pages.
+            for b in blocks:
+                block_type = b.get("type", "")
+                
+                # Handle child pages:
                 if block_type == "child_page":
                     if current_group:
                         content.append(" ".join(current_group))
                         current_group = []
-                    page_title = block.get("child_page", {}).get("title", "Untitled")
+                    page_title = b.get("child_page", {}).get("title", "Untitled")
                     content.append(f"\n### {page_title}\n")
                     if progress_callback:
                         progress_callback(1)
-                    child_page_id = block.get("id")
+                    child_page_id = b.get("id")
                     child_content = fetch_block_children(child_page_id, indent + 1, visited, progress_callback)
                     if child_content:
                         content.extend(child_content)
                     continue
-                # Handle child databases.
+
+                # Handle child databases:
                 if block_type == "child_database":
                     if current_group:
                         content.append(" ".join(current_group))
                         current_group = []
-                    db_title = block.get("child_database", {}).get("title", "Database")
+                    db_title = b.get("child_database", {}).get("title", "Database")
                     content.append(f"\n### Database: {db_title}\n")
-                    database_id = block.get("id")
+                    database_id = b.get("id")
                     db_entries = fetch_database_entries(database_id, visited, progress_callback)
                     if db_entries:
                         content.extend(db_entries)
                     continue
-                # Process regular blocks.
-                block_content = process_block(block)
+
+                # Process regular blocks:
+                block_content = process_block(b)
                 if not block_content:
                     continue
+
+                # If it's a heading block, flush current group first:
                 if block_type.startswith("heading_"):
                     if current_group:
                         content.append(" ".join(current_group))
@@ -224,29 +232,37 @@ def fetch_block_children(
                         content.append(" ".join(current_group))
                         current_group = []
                     content.append(block_content)
-                if block.get("has_children", False):
+
+                # Check for nested children in the same block:
+                if b.get("has_children", False):
                     if current_group:
                         content.append(" ".join(current_group))
                         current_group = []
-                    child_content = fetch_block_children(block["id"], indent + 1, visited, progress_callback)
+                    child_content = fetch_block_children(b["id"], indent + 1, visited, progress_callback)
                     if child_content:
                         content.extend(child_content)
+
+            # After processing blocks in this batch, flush if needed:
             if current_group:
                 content.append(" ".join(current_group))
+                current_group = []
+
             if not response.get("has_more"):
                 break
             cursor = response.get("next_cursor")
+
     except APIResponseError as e:
         logger.error(f"Error fetching blocks for id {block_id}: {str(e)}")
+
     return content
 
 # ------------------------------------------------------------------------------
 # Query Function Using Gemini 2.0 Flash AI
 # ------------------------------------------------------------------------------
-
 def query_gemini(content: str, question: str) -> str:
     """
     Sends the indexed Notion content and a question to Gemini 2.0 Flash AI.
+    No memory or context is stored between queries.
     """
     prompt = (
         "Below is the recursively indexed content of a Notion page (including subpages and database entries). "
@@ -264,9 +280,13 @@ def query_gemini(content: str, question: str) -> str:
         return f"Error querying Gemini: {str(e)}"
 
 # ------------------------------------------------------------------------------
-# Function to Fetch Notion Content (Index Once)
+# Function to Fetch Notion Content (Always Fresh; No Caching)
 # ------------------------------------------------------------------------------
 def fetch_notion_content(notion_url: str, progress_callback: Optional[Callable[[int], None]] = None) -> str:
+    """
+    Fetch content from a Notion URL by recursively walking the page.
+    This function is called every time a question is asked, ensuring no memory is kept.
+    """
     page_id = extract_page_id(notion_url)
     try:
         page = notion.pages.retrieve(page_id)
@@ -277,8 +297,12 @@ def fetch_notion_content(notion_url: str, progress_callback: Optional[Callable[[
                 break
         st.info(f"Accessed page: {title or 'Untitled'}")
     except APIResponseError as e:
-        st.warning("Could not retrieve page properties. The integration might not have full access to metadata, but block-level content will still be indexed.")
+        st.warning(
+            "Could not retrieve page properties. The integration might not have full access to metadata, "
+            "but block-level content will still be indexed."
+        )
         logger.warning(f"Page retrieve error: {str(e)}")
+
     st.spinner("Fetching content from Notion...")
     content_blocks = fetch_block_children(page_id, visited=set(), progress_callback=progress_callback)
     if not content_blocks:
@@ -289,44 +313,44 @@ def fetch_notion_content(notion_url: str, progress_callback: Optional[Callable[[
 # Streamlit UI
 # ------------------------------------------------------------------------------
 def main():
-    st.title("Notion Page QA with Gemini 2.0 Flash")
+    st.title("Notion Page QA (Memoryless) with Gemini 2.0 Flash")
     st.markdown(
         """
-        This app lets you input a Notion page URL (with proper integration) and ask questions
-        about its content. The page is recursively indexed—including any subpages or embedded databases.
-        The answer is generated using Gemini 2.0 Flash AI.
+        This app lets you enter a Notion page URL (with proper integration) and ask questions
+        about its content. The page is fully indexed each time you ask a question—absolutely no caching 
+        or memory from previous runs. The answer is generated using Gemini 2.0 Flash AI.
         """
     )
-    
+
     notion_url = st.text_input("Enter Notion Page URL", placeholder="https://www.notion.so/your-page-url")
-    
-    # Create a progress counter.
+
+    # Simple progress counter for demonstration
     progress_state = {"count": 0}
     progress_placeholder = st.empty()
-    
+
     def progress_callback(n: int):
         progress_state["count"] += n
         progress_placeholder.text(f"Indexed pages: {progress_state['count']}")
-    
-    if notion_url:
-        # Cache the indexed content per URL.
-        if "cached_url" not in st.session_state or st.session_state.cached_url != notion_url:
-            st.session_state.cached_url = notion_url
-            with st.spinner("Indexing Notion page..."):
-                st.session_state.notion_content = fetch_notion_content(notion_url, progress_callback=progress_callback)
-        notion_content = st.session_state.notion_content
+
+    question = st.text_input("Ask a question about the above Notion page", 
+                             placeholder="e.g., What is the main objective?")
+
+    if st.button("Get Answer") and notion_url.strip() and question.strip():
+        # We fetch the content from scratch every time
+        with st.spinner("Indexing Notion page (memoryless fetch)..."):
+            progress_state["count"] = 0
+            notion_content = fetch_notion_content(notion_url, progress_callback=progress_callback)
+
         if not notion_content:
             st.error("No content found in the page.")
         else:
-            st.success("Content loaded successfully!")
-            with st.expander("Show Indexed Content (for debugging)"):
+            st.success("Content indexed successfully!")
+            with st.expander("Show Indexed Content (optional debugging)"):
                 st.text_area("Indexed Content", notion_content, height=300)
-            question = st.text_input("Ask a question about this page", placeholder="e.g., What is the main objective?")
-            if st.button("Get Answer") and question.strip():
-                with st.spinner("Querying Gemini 2.0 Flash..."):
-                    answer = query_gemini(notion_content, question)
-                st.markdown("**Answer:**")
-                st.write(answer)
+            with st.spinner("Querying Gemini 2.0 Flash (memoryless AI)..."):
+                answer = query_gemini(notion_content, question)
+            st.markdown("**Answer:**")
+            st.write(answer)
 
 if __name__ == "__main__":
     main()
