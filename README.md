@@ -1,29 +1,54 @@
-# Notion Page QA (Memoryless) with Gemini 2.0 Flash
+# NotionAgent
 
-This Streamlit application fetches and indexes all blocks (and sub-pages/databases) from a specified Notion page, then uses **Gemini 2.0 Flash AI** (via `google.generativeai`) to answer questions about that Notion content. Both the Notion indexing and the AI prompt are done from scratch on each query—no content or AI context is cached or retained between sessions or questions.
+Memoryless Streamlit Q&A over a Notion page using Gemini 2.0 Flash. Every answer re-fetches and re-indexes the page (including subpages and child databases); nothing is cached between questions.
 
 ## Features
 
-- **Memoryless indexing**: Each time you click “Get Answer,” the Notion page is fully fetched (recursively through subpages and child databases) with no caching.
-- **Memoryless AI**: Gemini 2.0 Flash AI sees only the single question and the Notion data at query time. No past interactions or user history is provided to the model.
-- **Progress tracking**: A counter shows how many pages/entries have been indexed.
-- **Debug-friendly**: You can optionally view the fully indexed content in a text area to see exactly what is being fed to the AI.
+- Recursive Notion indexing (blocks, child pages, child databases)
+- Gemini 2.0 Flash answers from the freshly indexed text only
+- Progress counter for indexed pages/entries
+- Optional expander to inspect the indexed content fed to the model
 
 ## Requirements
 
-1. **Python 3.7+** (Recommended: Python 3.9 or newer).
-2. Python libraries:
-   - `streamlit`
-   - `notion-client`
-   - `google-generativeai`
-   - Standard libraries (e.g. `logging`, `re`, `typing`) come with Python.
-3. A **Notion integration token** with read access to your pages:
-   - Create this under [Notion Integrations](https://www.notion.so/my-integrations).
-   - Define it as an environment variable `NOTION_API_KEY` or store in `.streamlit/secrets.toml`.
-4. A **Gemini API key** from [Google PaLM API](https://developers.generativeai.google/):
-   - Define it as `gemini_api_key` in `.streamlit/secrets.toml` or an environment variable.
+See `requirements.txt`:
 
-## Installation
+- streamlit
+- notion-client
+- google-generativeai
+- openai (listed in requirements; the app path shown uses Gemini)
+
+Also need:
+
+- A Notion integration token with read access to the target page
+- A Gemini API key
+
+## Setup
+
+1. Clone the repo and install deps:
 
 ```bash
-pip install streamlit notion-client google-generativeai
+pip install -r requirements.txt
+```
+
+2. Configure Streamlit secrets (e.g. `.streamlit/secrets.toml`):
+
+```toml
+NOTION_API_KEY = "YOUR_NOTION_INTEGRATION_TOKEN"
+GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+```
+
+3. Share the Notion page with your integration.
+
+## Usage
+
+```bash
+streamlit run NotionAgent.py
+```
+
+Then paste a Notion page URL, ask a question, and click **Get Answer**.
+
+## Notes
+
+- Keys are read from `st.secrets` (`NOTION_API_KEY`, `GEMINI_API_KEY`). Do not hardcode tokens in source.
+- Default placeholder Notion key in code is only a fallback string; set secrets before use.
